@@ -35,14 +35,6 @@
 
 数据源：dumpsys audio / media.audio_flinger / media.audio_policy，经 Shizuku 直读，纯本地无网络权限。
 
-## 截图
-
-| 输出总览 | 明细卡片 |
-|---|---|
-| ![screenshot-1](docs/screenshot-1.png) | ![screenshot-2](docs/screenshot-2.png) |
-
-头追可视化与发送数据截图待补。
-
 ## 使用
 
 1. 装 Shizuku 并启动，SpazPeek 里授权
