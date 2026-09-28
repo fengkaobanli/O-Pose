@@ -1,13 +1,21 @@
 package com.spazpeek;
 
+import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.animation.RotateAnimation;
@@ -15,6 +23,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
@@ -47,7 +56,7 @@ import rikka.shizuku.Shizuku;
 
 /**
  * SpazPeek — 空间音频链路取证（Material 3 版）
- * 数据层：把 dumpsys 原文提炼成「结论 + 指标行 + track 行」，原文降级为可折叠附录；
+ * 数据层：把 dumpsys 原文提炼成「结论 + 指标行 + 音频流行」，原文降级为可折叠附录；
  * 视图层：M3 语义色 + 卡片流 + 状态 chip。
  */
 public class MainActivity extends AppCompatActivity {
@@ -65,6 +74,48 @@ public class MainActivity extends AppCompatActivity {
     private LinearProgressIndicator progress;
     private MaterialCardView cardEmpty;
     private MaterialButton btnGrant, btnRefresh;
+
+    // ── 头追接管 ──
+    private MaterialSwitch swHt;
+    private TextView tvHtDevice, tvHtStatus, tvHtPose, tvHtTelemetry, tvFps, tvFpsState, tvSendRaw, tvSendDeg;
+    private MaterialButton btnHtPick;
+    private HeadSphereView vizHt;
+    // 发送监控（v27/v28：3D球示意图 + 发送数据文本 并存）
+    private long lastVizAt = 0;
+    private long fpsAt = 0;
+    private int fpsCount = 0;
+    private float fpsNow = 0;
+
+    // ── 采集向导 ──
+    private View guideOverlay;
+    private TextView tvGuideTitle, tvGuideSub, tvPhoneAng;
+    private CountdownRingView ringGuide;
+    private MaterialButton btnGuideMain, btnGuideCancel;
+    private PhoneImu phoneImu;
+    private com.google.android.material.switchmaterial.SwitchMaterial swXm5;
+    private TextView tvXm5;
+    private Xm5Hid xm5;
+    private float phYaw, phPitch, phRoll;
+    private boolean phInit = false, phoneSmooth = true;
+    private long phLastUi = 0;
+
+    // ── 后台保活 ──
+    private TextView tvKeepAlive;
+    private TextView tvGuard;
+    private MaterialButton btnBattOpt, btnBgSettings;
+    private int guideIdx = 0;
+    private int guideSeq = 0;
+    private static final String[] GUIDE_ACTIONS = {
+            "①头带着手机一起：慢慢左转到底，再慢慢右转到底",
+            "②慢慢抬头到底，再慢慢低头到底（手机跟着抬/低）",
+            "③慢慢向左歪头，再慢慢向右歪头（手机跟着歪）",
+    };
+    private HeadTrackController htController;
+    private String htMac = "";
+    private Runnable pendingBt;
+    private long lastPoseAt = 0;
+    private static final int REQ_BT = 5555;
+    private static final String PREF = "spazpeek";
 
     private String lastReport = "";
     private List<Kv> lastOverview = new ArrayList<>();
@@ -104,6 +155,9 @@ public class MainActivity extends AppCompatActivity {
         DynamicColors.applyToActivitiesIfAvailable(getApplication());
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        // 使用/测试期间保持屏幕常亮：防息屏后系统冻结App导致头追数据流积压/断流
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        HTLog.log("MA", "build=v10(watchdog+keepalive) pitchSignSend=-1.0 yawSignSend=-1.0 | yawDisplay=deep-map yawSend=1:1-rate");
 
         reportContainer = findViewById(R.id.reportContainer);
         chipStatus = findViewById(R.id.chipStatus);
@@ -113,6 +167,155 @@ public class MainActivity extends AppCompatActivity {
         btnGrant = findViewById(R.id.btnGrant);
         btnRefresh = findViewById(R.id.btnRefresh);
         MaterialSwitch swAuto = findViewById(R.id.swAuto);
+
+        swHt = findViewById(R.id.swHt);
+        tvHtDevice = findViewById(R.id.tvHtDevice);
+        tvHtStatus = findViewById(R.id.tvHtStatus);
+        tvHtPose = findViewById(R.id.tvHtPose);
+        tvHtTelemetry = findViewById(R.id.tvHtTelemetry);
+        tvFps = findViewById(R.id.tvFps);
+        tvFpsState = findViewById(R.id.tvFpsState);
+        tvSendRaw = findViewById(R.id.tvSendRaw);
+        tvSendDeg = findViewById(R.id.tvSendDeg);
+        btnHtPick = findViewById(R.id.btnHtPick);
+
+        htMac = getSharedPreferences(PREF, MODE_PRIVATE).getString("ht_mac", "");
+        updateHtDeviceLabel();
+
+        btnHtPick.setOnClickListener(v -> ensureBtPermission(this::pickHtDevice));
+
+        vizHt = findViewById(R.id.vizHt);
+        android.widget.SeekBar sbGain = findViewById(R.id.sbSendGain);
+        android.widget.TextView tvGain = findViewById(R.id.tvSendGain);
+        if (sbGain != null) {
+            sbGain.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(android.widget.SeekBar s, int pr, boolean fromUser) {
+                    float g = 0.2f + (pr / 100f) * 1.0f;
+                    if (htController != null) htController.setSendGain(g);
+                    else getSharedPreferences("spz", MODE_PRIVATE).edit().putFloat("send_gain", g).apply();
+                    if (tvGain != null) tvGain.setText(pr + "%" + String.format(java.util.Locale.US, " (x%.2f)", g));
+                }
+                @Override public void onStartTrackingTouch(android.widget.SeekBar s) {}
+                @Override public void onStopTrackingTouch(android.widget.SeekBar s) {}
+            });
+        }
+        ((MaterialButton) findViewById(R.id.btnVizReset)).setOnClickListener(v -> {
+            vizHt.resetReference();
+            HTLog.log("MA", "viz resetReference");
+        });
+        ((MaterialButton) findViewById(R.id.btnHtCalib)).setOnClickListener(v -> {
+            if (htController != null) {
+                HTLog.log("MA", "manual recalibrate");
+                htController.recalibrate();
+                if (vizHt != null) vizHt.resetToZero();   // 解码器归零，可视化必须同步归零
+            } else {
+                tvHtStatus.setText("先打开接管开关再校准");
+            }
+        });
+
+        // ── 方向标定（坐标系自适应：重新配对后方向可能变）──
+        ((MaterialButton) findViewById(R.id.btnDirCalib)).setOnClickListener(v -> {
+            if (htController != null && htController.isActive()) {
+                HTLog.log("MA", "direction calib");
+                htController.startDirectionCalib();
+            } else {
+                tvHtStatus.setText("先打开接管开关，等校准完成再标定方向");
+            }
+        });
+        ((MaterialButton) findViewById(R.id.btnDirFlip)).setOnClickListener(v -> {
+            if (htController != null) {
+                HTLog.log("MA", "direction flip yaw");
+                htController.flipYawSign();
+                if (vizHt != null) vizHt.flipYawDisplay();
+            } else {
+                tvHtStatus.setText("先打开接管开关再反向");
+            }
+        });
+        ((MaterialButton) findViewById(R.id.btnDirFlipP)).setOnClickListener(v -> {
+            if (htController != null) {
+                HTLog.log("MA", "direction flip pitch");
+                htController.flipPitchSign();
+                if (vizHt != null) vizHt.flipPitchDisplay();
+            } else {
+                tvHtStatus.setText("先打开接管开关再反向");
+            }
+        });
+
+        // ── 采集向导 ──
+        guideOverlay = findViewById(R.id.guideOverlay);
+        tvGuideTitle = findViewById(R.id.tvGuideTitle);
+        tvGuideSub = findViewById(R.id.tvGuideSub);
+        ringGuide = findViewById(R.id.ringGuide);
+        btnGuideMain = findViewById(R.id.btnGuideMain);
+        btnGuideCancel = findViewById(R.id.btnGuideCancel);
+        tvPhoneAng = findViewById(R.id.tvPhoneAng);
+
+        // ── 后台保活卡片 ──
+        tvKeepAlive = findViewById(R.id.tvKeepAlive);
+        tvGuard = findViewById(R.id.tvGuard);
+        btnBattOpt = findViewById(R.id.btnBattOpt);
+        btnBgSettings = findViewById(R.id.btnBgSettings);
+        btnBattOpt.setOnClickListener(v -> requestBatteryExemption());
+        btnBgSettings.setOnClickListener(v -> openAppSettings());
+        refreshKeepAlive();
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 0x77);
+        }
+
+        ((MaterialButton) findViewById(R.id.btnGuide)).setOnClickListener(v -> {
+            HTLog.log("MA", "guide: open");
+            guideOverlay.setVisibility(View.VISIBLE);
+            if (phoneImu == null) phoneImu = new PhoneImu(this, this::onPhonePose);
+            tvPhoneAng.setVisibility(phoneImu.available() ? View.VISIBLE : View.GONE);
+            guideIntro();
+        });
+
+        // ── 采集选项（2026-09-26：移除"高采样率采集"与"手机角防抖"开关）──
+        // 防抖固定常开；手机 IMU 高采样写死关闭（用不到）
+        android.content.SharedPreferences spz = getSharedPreferences("spz", MODE_PRIVATE);
+        PhoneImu.highRate = false;
+        phoneSmooth = true;
+
+        // ── 高速头追（v28：移除开关，恒定 20ms 高速模式）──
+        AacpHeadTracker.periodUs = 20000;
+
+        // ── XM5 头追数据同步读取（Shizuku/root；与 AirPods/手机角同日志时间轴）──
+        swXm5 = findViewById(R.id.swXm5);
+        tvXm5 = findViewById(R.id.tvXm5);
+        final boolean xm5on = spz.getBoolean("ht_xm5_read", false);
+        swXm5.setChecked(xm5on);
+        xm5 = new Xm5Hid();
+        xm5.setUi(new Xm5Hid.Ui() {
+            @Override public void onXm5State(String s) {
+                ui.post(() -> tvXm5.setText("XM5: " + s));
+            }
+            @Override public void onXm5Frame(long ts, int a, int b, int c, int disc) { /* 帧已入日志 */ }
+        });
+        tvXm5.setText("XM5: " + (xm5on ? "启动中…" : "未启用"));
+        if (xm5on) xm5.start();
+        swXm5.setOnCheckedChangeListener((v4, on) -> {
+            spz.edit().putBoolean("ht_xm5_read", on).apply();
+            HTLog.log("MA", "xm5Read=" + on);
+            if (on) xm5.start(); else xm5.stop();
+        });
+        if (sbGain != null) {
+            float sg = getSharedPreferences("spz", MODE_PRIVATE).getFloat("send_gain", 0.6f);
+            int pr = Math.round((sg - 0.2f) * 100f);
+            sbGain.setProgress(pr);
+            if (tvGain != null) tvGain.setText(pr + "%" + String.format(java.util.Locale.US, " (x%.2f)", sg));
+        }
+        btnGuideCancel.setOnClickListener(v -> {
+            HTLog.log("MA", "guide: cancel");
+            guideSeq++;
+            ringGuide.stop();
+            if (phoneImu != null) phoneImu.stop();
+            guideOverlay.setVisibility(View.GONE);
+        });
+        swHt.setOnCheckedChangeListener((v, on) -> {
+            if (on) startHeadTrack();
+            else stopHeadTrack();
+        });
 
         final View root = findViewById(R.id.root);
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
@@ -181,12 +384,309 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        refreshKeepAlive();
+    }
+
+    @Override
     protected void onDestroy() {
         autoOn = false;
         ui.removeCallbacks(autoLoop);
+        stopHeadTrack();
+        if (phoneImu != null) phoneImu.stop();
+        if (xm5 != null) xm5.stop();
         try { Shizuku.removeRequestPermissionResultListener(permListener); } catch (Throwable ignored) {}
         io.shutdownNow();
         super.onDestroy();
+    }
+
+    // ─────────────────────────────────────────────────────── head tracking
+
+    private void ensureBtPermission(Runnable then) {
+        if (Build.VERSION.SDK_INT >= 31
+                && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            pendingBt = then;
+            requestPermissions(new String[] { Manifest.permission.BLUETOOTH_CONNECT }, REQ_BT);
+            return;
+        }
+        then.run();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_BT) return;
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            Runnable t = pendingBt;
+            pendingBt = null;
+            if (t != null) t.run();
+        } else {
+            tvHtStatus.setText("蓝牙权限被拒绝（Android 12+ 需要「附近的设备」权限）");
+            swHt.setChecked(false);
+        }
+    }
+
+    private void pickHtDevice() {
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        java.util.Set<BluetoothDevice> bonded = null;
+        try { if (adapter != null) bonded = adapter.getBondedDevices(); } catch (Throwable ignored) {}
+        if (bonded == null || bonded.isEmpty()) {
+            tvHtStatus.setText("没有已配对的蓝牙设备");
+            return;
+        }
+        final java.util.List<BluetoothDevice> list = new java.util.ArrayList<>(bonded);
+        final String[] items = new String[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            BluetoothDevice d = list.get(i);
+            String name;
+            try { name = d.getName(); } catch (Throwable t) { name = null; }
+            items[i] = (name == null || name.isEmpty() ? "(未知设备)" : name) + "\n" + d.getAddress();
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.ht_pick)
+                .setItems(items, (dlg, which) -> {
+                    htMac = list.get(which).getAddress();
+                    getSharedPreferences(PREF, MODE_PRIVATE).edit().putString("ht_mac", htMac).apply();
+                    updateHtDeviceLabel();
+                    if (swHt.isChecked() && htController == null) startHeadTrack();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void updateHtDeviceLabel() {
+        if (htMac == null || htMac.isEmpty()) {
+            tvHtDevice.setText(R.string.ht_device_none);
+            return;
+        }
+        String name = htMac;
+        try {
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter != null) {
+                BluetoothDevice d = adapter.getRemoteDevice(htMac);
+                String n = d.getName();
+                if (n != null && !n.isEmpty()) name = n;
+            }
+        } catch (Throwable ignored) {}
+        tvHtDevice.setText(getString(R.string.ht_device_fmt, name, htMac));
+    }
+
+    private void startHeadTrack() {
+        if (htMac == null || htMac.isEmpty()) {
+            tvHtStatus.setText("先选择耳机");
+            ensureBtPermission(this::pickHtDevice);
+            return;
+        }
+        if (htController != null && htController.isActive()) return;
+        tvHtStatus.setText("接管启动中…");
+        HTLog.log("MA", "startHeadTrack mac=" + htMac);
+        htController = new HeadTrackController(this, htUi);
+        htController.start(htMac);
+        HeadTrackService.start(this);   // 前台服务：防后台冻结
+        FrostGuard.start();             // 反冻守护：秒级自动解冻
+        SilentKeeper.start();           // 静音保持器：软性防冻（音频活跃标记）
+    }
+
+    private void stopHeadTrack() {
+        if (htController != null) {
+            HTLog.log("MA", "stopHeadTrack");
+            htController.stop();
+            htController = null;
+        }
+        HeadTrackService.stop(this);
+        FrostGuard.stop();
+        SilentKeeper.stop();
+    }
+
+    // ────────────────────────────────────────────────────── 后台保活
+
+    /** 电池优化是否已豁免（豁免 = 系统不限制后台运行）。 */
+    private boolean isBattExempt() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            return pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private void requestBatteryExemption() {
+        if (isBattExempt()) {
+            refreshKeepAlive();
+            Snackbar.make(findViewById(android.R.id.content), "电池优化已豁免 ✓", Snackbar.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            Intent i = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            i.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Throwable t) {
+            HTLog.log("KEEP", "batt exempt intent fail: " + t);
+            openAppSettings();
+        }
+    }
+
+    private void openAppSettings() {
+        try {
+            Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Throwable t) {
+            HTLog.log("KEEP", "app settings intent fail: " + t);
+        }
+    }
+
+    private void refreshKeepAlive() {
+        if (tvKeepAlive == null) return;
+        boolean ex = isBattExempt();
+        tvKeepAlive.setText(ex
+                ? "电池优化：已豁免 ✓ 后台不受限"
+                : "电池优化：未豁免 — 建议点「电池优化豁免」");
+        // 反冻守护状态（后台线程查询，防卡 UI）
+        if (tvGuard != null) {
+            new Thread(() -> {
+                String st = FrostGuard.status();
+                ui.post(() -> { if (tvGuard != null) tvGuard.setText("反冻守护：" + st); });
+            }, "spz-guard-st").start();
+        }
+    }
+
+    private final HeadTrackController.Ui htUi = new HeadTrackController.Ui() {
+        @Override public void onStatus(String s) {
+            ui.post(() -> tvHtStatus.setText(s));
+        }
+
+        @Override public void onPose(float pitchDeg, float yawDeg, long htFrames, long totalFrames) {
+            long now = System.currentTimeMillis();
+            // 3D 空间示意图更新（33ms 节流）
+            if (now - lastVizAt >= 33) {
+                lastVizAt = now;
+                ui.post(() -> { if (vizHt != null) vizHt.setPose(pitchDeg, yawDeg); });
+            }
+            // 采样率统计（每次回调 = 收到一个 64B 数据块）
+            fpsCount++;
+            if (now - fpsAt >= 1000) {
+                fpsNow = fpsCount * 1000f / (now - fpsAt);
+                fpsCount = 0;
+                fpsAt = now;
+            }
+            if (now - lastPoseAt < 200) return;
+            lastPoseAt = now;
+            final int rx = PoseBridge.lastRx, rz = PoseBridge.lastRz;
+            final float pd = PoseBridge.lastPitchDeg, yd = PoseBridge.lastYawDeg;
+            final float fps = fpsNow;
+            ui.post(() -> {
+                tvHtPose.setText(String.format(Locale.US, "%.1f Hz", fps));
+                if (tvFps != null) {
+                    tvFps.setText(String.format(Locale.US, "%.1f Hz", fps));
+                    if (fps >= 40) tvFps.setTextColor(0xFF2E7D32);
+                    else if (fps >= 25) tvFps.setTextColor(0xFFEF6C00);
+                    else tvFps.setTextColor(0xFFC62828);
+                }
+                if (tvFpsState != null) tvFpsState.setText(fps >= 40 ? "已稳定 · 发送中" : (fps >= 25 ? "预热中…" : (fps > 0.5 ? "连接初建…" : "等待接管")));
+                if (tvSendRaw != null) tvSendRaw.setText(String.format(Locale.US, "发送 rx=%+d  rz=%+d", rx, rz));
+                if (tvSendDeg != null) tvSendDeg.setText(String.format(Locale.US, "上下 %+.1f°   左右 %+.1f°", pd, yd));
+            });
+        }
+
+        @Override public void onTelemetry(String t) {
+            ui.post(() -> tvHtTelemetry.setText(t));
+        }
+    };
+
+    // ────────────────────────────────────────────────────── 采集向导
+
+    private void guideIntro() {
+        guideSeq++;
+        guideIdx = 0;
+        tvGuideTitle.setText("头追数据采集");
+        tvGuideSub.setText("把手机举在面前、眼睛平视屏幕；全程约 40 秒");
+        if (phoneImu != null) phoneImu.start();
+        ringGuide.stop();
+        btnGuideMain.setVisibility(View.VISIBLE);
+        btnGuideMain.setText("开始");
+        btnGuideMain.setOnClickListener(v -> guideSettle());
+    }
+
+    private void guideSettle() {
+        final int seq = guideSeq;
+        HTLog.log("MA", "guide: settle begin");
+        btnGuideMain.setVisibility(View.GONE);
+        tvGuideTitle.setText("请坐好，举好手机");
+        tvGuideSub.setText("眼睛看着手机屏幕，头正对手机；3 秒后重置正方向");
+        ringGuide.start(3, () -> { if (seq == guideSeq) guideResetRef(); });
+    }
+
+    private void guideResetRef() {
+        final int seq = guideSeq;
+        // "重置正方向" = 重建数据零点（以"坐好"姿态为中性位）+ 显示基准归零 + 手机标尺归零
+        if (htController != null) htController.recalibrate();
+        if (vizHt != null) vizHt.resetToZero();   // 与解码器重校准配对：基准归零，不快照残差
+        if (phoneImu != null) phoneImu.resetBaseline();
+        HTLog.log("MA", "guide: recalibrate + resetReference");
+        tvGuideTitle.setText("已重置正方向");
+        tvGuideSub.setText("接下来按提示做动作");
+        // 给重校准留出采样时间（5 帧≈0.2s），稍作延迟后进入动作
+        ui.postDelayed(() -> { if (seq == guideSeq) guideNextAction(); }, 2000);
+    }
+
+    private void guideNextAction() {
+        final int seq = guideSeq;
+        if (guideIdx >= GUIDE_ACTIONS.length) { guideDone(); return; }
+        HTLog.log("MA", "guide action " + (guideIdx + 1) + "/" + GUIDE_ACTIONS.length);
+        tvGuideTitle.setText(GUIDE_ACTIONS[guideIdx]);
+        tvGuideSub.setText("跟着手机上的角度慢慢做，到位停一下再回");
+        ui.postDelayed(() -> {
+            if (seq == guideSeq) tvGuideSub.setText("看手机角度：到位后稳住再回");
+        }, 3000);
+        ringGuide.start(12, () -> { if (seq == guideSeq) guideReturn(); });
+    }
+
+    private void guideReturn() {
+        final int seq = guideSeq;
+        guideIdx++;
+        if (guideIdx >= GUIDE_ACTIONS.length) { guideDone(); return; }
+        HTLog.log("MA", "guide return " + guideIdx);
+        tvGuideTitle.setText("缓冲");
+        tvGuideSub.setText("放松一下，准备下一个动作");
+        ringGuide.start(2, () -> { if (seq == guideSeq) guideNextAction(); });
+    }
+
+    private void guideDone() {
+        HTLog.log("MA", "guide: done");
+        tvGuideTitle.setText("采集完成 ✓");
+        tvGuideSub.setText("数据已记录，可关闭向导");
+        ringGuide.stop();
+        btnGuideMain.setVisibility(View.VISIBLE);
+        btnGuideMain.setText("关闭");
+        btnGuideMain.setOnClickListener(v -> {
+            guideSeq++;
+            ringGuide.stop();
+            if (phoneImu != null) phoneImu.stop();
+            guideOverlay.setVisibility(View.GONE);
+        });
+    }
+
+    /** 手机传感器回调（UI 线程）：EMA 平滑 + 降频刷新（防抖）。采集数据不受影响。 */
+    private void onPhonePose(float yaw, float pitch, float roll) {
+        if (!phInit) { phYaw = yaw; phPitch = pitch; phRoll = roll; phInit = true; }
+        else if (phoneSmooth) {
+            final float a = 0.25f;
+            phYaw += (yaw - phYaw) * a;
+            phPitch += (pitch - phPitch) * a;
+            phRoll += (roll - phRoll) * a;
+        } else { phYaw = yaw; phPitch = pitch; phRoll = roll; }
+
+        long now = android.os.SystemClock.uptimeMillis();
+        long iv = phoneSmooth ? 200 : 50;
+        if (now - phLastUi < iv) return;
+        phLastUi = now;
+        final float y = phYaw, p = phPitch, r = phRoll;
+        if (tvPhoneAng != null) {
+            tvPhoneAng.setText(String.format(Locale.US,
+                    "手机角（防抖平滑）：左右 %+.0f° · 上下 %+.0f° · 倾斜 %+.0f°", y, p, r));
+        }
     }
 
     // ─────────────────────────────────────────────────────────────── status
@@ -298,7 +798,7 @@ public class MainActivity extends AppCompatActivity {
             title.setText(first);
 
             if (first.contains("【1】")) {
-                // 总览卡片：标题按状态着色，一眼看出「双渲 / 正常」，正文为结构化总览行
+                // 总览卡片：标题按状态着色，一眼看出「注意 / 正常」，正文为结构化总览行
                 title.setTextColor(ContextCompat.getColor(this, colorOf(lastState)));
                 body.setVisibility(View.GONE);
                 renderKv(card, inf, lastOverview);
@@ -358,7 +858,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout inner = card.findViewById(R.id.sectionInner);
         if (lastTracks.isEmpty()) {
             body.setVisibility(View.VISIBLE);
-            body.setText("(无 started/paused track —— 先随便放点声音再刷新)");
+            body.setText("(无活动音频流 —— 先随便放点声音再刷新)");
             return;
         }
         body.setVisibility(View.GONE);
@@ -415,8 +915,11 @@ public class MainActivity extends AppCompatActivity {
                 "dumpsys media.audio_flinger 2>/dev/null | grep 'Sample rate' | head -10");
         String fxRaw = ShizukuShell.sh(
                 "dumpsys media.audio_flinger 2>/dev/null | grep -iE 'Oplus Spatializer|dolby|dirac|dts' | head -8");
+        // 蓝牙编码（A2DP codec：LDAC / aptX / AAC / SBC…）
+        String btRaw = ShizukuShell.sh(
+                "dumpsys bluetooth_manager 2>/dev/null | grep -E 'A2dpStateMachine for|mCodecConfig:|StateMachine: name=A2dp' | head -24");
 
-        // ── 判定 ─────────────────────────────────────────────────────
+        // ── 链路状态 ─────────────────────────────────────────────────
         boolean doubleRender = false, goodChain = false;
         for (Tk t : tracks) {
             if (t.spatial && t.mask >= 0 && t.mask <= 0x3) doubleRender = true;
@@ -426,7 +929,7 @@ public class MainActivity extends AppCompatActivity {
         String headline;
         State hs;
         if (doubleRender) {
-            headline = "双渲";
+            headline = "注意";
             hs = State.WARN;
         } else if (goodChain) {
             headline = "正常";
@@ -448,12 +951,16 @@ public class MainActivity extends AppCompatActivity {
         boolean resampling = srcSr > 0 && outSr > 0 && srcSr != outSr;
         boolean oplusFx = fxRaw != null && fxRaw.contains("Oplus Spatializer");
         List<Kv> ov = p.overview;
-        ov.add(new Kv("判定", headline, hs));
         ov.add(new Kv("App输出", appOutLine(tracks), State.IDLE));
         ov.add(new Kv("头部跟踪", headTrackingSummary(htRaw), headTrackingState(htRaw)));
         ov.add(new Kv("其他优化", fxSummary(fxRaw), oplusFx ? State.OK : State.IDLE));
         ov.add(new Kv("系统重渲", spOn ? "有 · SPATIALIZER" : "无", spOn ? State.OK : State.IDLE));
-        ov.add(new Kv("输出链路", devFriendly(devRaw), State.IDLE));
+        String devStr = devFriendly(devRaw);
+        ov.add(new Kv("输出链路", devStr, State.IDLE));
+        if (devStr.startsWith("蓝牙 A2DP")) {
+            String btInfo = btCodecInfo(btRaw);
+            ov.add(new Kv("蓝牙编码", btInfo, btCodecState(btInfo)));
+        }
         ov.add(new Kv("采样率", srcSr > 0 ? srcSr + " Hz" : "—", State.IDLE));
         ov.add(new Kv("重采样", resampleLine(srcSr, outSr), resampling ? State.WARN : State.IDLE));
 
@@ -462,18 +969,17 @@ public class MainActivity extends AppCompatActivity {
         kvs.add(new Kv("执行身份", idFriendly(idRaw), "uid=0".equals(idUid(idRaw)) ? State.WARN : State.OK));
         kvs.add(new Kv("Shizuku", ShizukuShell.hasPermission() ? "已授权" : "未授权",
                 ShizukuShell.hasPermission() ? State.OK : State.BAD));
-        kvs.add(new Kv("活跃 track", tracks.isEmpty() ? "无" : tracks.size() + " 条", tracks.isEmpty() ? State.IDLE : State.OK));
+        kvs.add(new Kv("活跃音频流", tracks.isEmpty() ? "无" : tracks.size() + " 条", tracks.isEmpty() ? State.IDLE : State.OK));
 
         // ── 文本报告（复制 / 导出 用） ───────────────────────────────
         sb.append("SpazPeek · 空间音频链路取证").append(NL);
         sb.append("时间     ").append(now()).append(NL);
-        sb.append("判定     ").append(headline).append(NL);
         sb.append(NL).append("【1】输出总览").append(NL);
         sb.append(kvToText(ov)).append(NL);
 
-        sb.append(NL).append(NL).append("【2】活跃 track").append(NL);
+        sb.append(NL).append(NL).append("【2】活跃音频流").append(NL);
         if (tracks.isEmpty()) {
-            sb.append("(无 started/paused track)").append(NL);
+            sb.append("(无活动音频流)").append(NL);
         } else {
             for (Tk t : tracks) {
                 sb.append(appLabel(t.uid)).append(KV).append(t.detailText()).append(NL);
@@ -617,7 +1123,7 @@ public class MainActivity extends AppCompatActivity {
         String chipText() {
             switch (chipState()) {
                 case OK:   return "正确链路";
-                case WARN: return "双渲";
+                case WARN: return "注意";
                 case IDLE: return "普通立体声";
                 default:   return "未知";
             }
@@ -761,6 +1267,61 @@ public class MainActivity extends AppCompatActivity {
     private static String fmtKHz(int sr) {
         if (sr % 1000 == 0) return (sr / 1000) + " kHz";
         return String.format(Locale.US, "%.1f kHz", sr / 1000.0);
+    }
+
+    /** 蓝牙编码：优先取 Active 的 A2dpStateMachine 段，其次 Connected 段 */
+    private static String btCodecInfo(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return "—";
+        String[] lines = raw.split("\\n");
+        String best = null;
+        int bestRank = -1;
+        String codec = null;
+        int sr = 0, bits = 0;
+        boolean active = false, connected = false, inSeg = false;
+        for (int i = 0; i <= lines.length; i++) {
+            String ln = (i < lines.length) ? lines[i] : "";
+            boolean isHdr = ln.contains("A2dpStateMachine for");
+            if (isHdr || i == lines.length) {
+                if (inSeg && codec != null) {
+                    int rank = active ? 2 : (connected ? 1 : 0);
+                    if (rank > bestRank) {
+                        bestRank = rank;
+                        StringBuilder b = new StringBuilder(codec);
+                        if (sr > 0) b.append(" · ").append(fmtKHz(sr));
+                        if (bits > 0) b.append(" · ").append(bits).append(" bit");
+                        best = b.toString();
+                    }
+                }
+                if (isHdr) {
+                    inSeg = true;
+                    active = ln.contains("(Active)");
+                    connected = false;
+                    codec = null;
+                    sr = 0;
+                    bits = 0;
+                }
+            } else if (inSeg) {
+                if (ln.contains("mCodecConfig:")) {
+                    Matcher mc = Pattern.compile("codecName:([A-Za-z0-9+\\- ]+)").matcher(ln);
+                    if (mc.find()) codec = mc.group(1).trim();
+                    Matcher ms = Pattern.compile("mSampleRate:0x[0-9a-fA-F]+\\((\\d+)\\)").matcher(ln);
+                    if (ms.find()) sr = Integer.parseInt(ms.group(1));
+                    Matcher mb = Pattern.compile("mBitsPerSample:0x[0-9a-fA-F]+\\((\\d+)\\)").matcher(ln);
+                    if (mb.find()) bits = Integer.parseInt(mb.group(1));
+                }
+                if (ln.contains("state=Connected")) connected = true;
+            }
+        }
+        return best != null ? best : "—";
+    }
+
+    /** 蓝牙编码状态色：高解析编码（LDAC / aptX 系 / LHDC / LC3）为绿色 */
+    private static State btCodecState(String info) {
+        if (info == null || "—".equals(info)) return State.IDLE;
+        String u = info.toUpperCase(Locale.US);
+        if (u.startsWith("LDAC") || u.startsWith("LHDC") || u.startsWith("LC3")
+                || u.startsWith("APTX")) return State.OK;
+        return State.IDLE;
     }
 
     /** 其他音频优化引擎（Spatializer / Dolby 等） */

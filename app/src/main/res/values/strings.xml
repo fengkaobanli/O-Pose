@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SpazPeek</string>
-    <string name="app_subtitle">链路易读性检测</string>
+    <string name="app_subtitle">OPPO 头追接管版</string>
 
     <string name="btn_grant">请求 Shizuku</string>
     <string name="btn_refresh">刷新</string>
@@ -16,8 +16,8 @@
     <string name="status_denied">权限被拒绝</string>
 
     <!-- Section titles -->
-    <string name="sec_pipeline">链路判定</string>
-    <string name="sec_tracks">活跃 track</string>
+    <string name="sec_pipeline">链路状态</string>
+    <string name="sec_tracks">活跃音频流</string>
     <string name="sec_limited">Shizuku 拿不到（需 root）</string>
     <string name="sec_raw">原始片段（节选）</string>
 
@@ -32,4 +32,21 @@
     <string name="toast_exported">已导出：%1$s</string>
     <string name="toast_export_failed">导出失败: %1$s</string>
     <string name="cd_expand">展开/折叠</string>
+
+    <!-- 头追接管（AirPods → 系统空间音频） -->
+    <string name="ht_title">头追接管 · AirPods → 系统</string>
+    <string name="ht_switch">接管</string>
+    <string name="ht_pick">选择耳机</string>
+    <string name="ht_calib">重新校准</string>
+    <string name="ht_dircalib">方向标定</string>
+    <string name="ht_dirflip">左右反向</string>
+    <string name="ht_dirflipp">上下反向</string>
+    <string name="guide_enter">开始数据采集</string>
+    <string name="ht_device_none">未选择设备（点「选择耳机」挑一台已配对的耳机）</string>
+    <string name="ht_device_fmt">设备：%1$s · %2$s</string>
+    <string name="ht_status_idle">未接管</string>
+    <string name="ht_pose_idle">pitch —  yaw —</string>
+    <string name="ht_viz_title">姿态可视化</string>
+    <string name="ht_viz_reset">正方向重置</string>
+    <string name="ht_viz_hint">蓝点 = 头部朝向 · 变暗/空心 = 转到背面 · 转头观察方向</string>
 </resources>

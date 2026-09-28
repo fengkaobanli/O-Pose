@@ -81,6 +81,14 @@ public final class ShizukuShell {
         return (Process) NEW_PROCESS.invoke(null, (Object) new String[]{"sh", "-c", cmd}, null, null);
     }
 
+    /**
+     * 流式执行：返回 Process，由调用方自行读取 stdout（用于 cat /dev/hidrawN 之类长连接）。
+     * 注意：完成后必须 destroy()。
+     */
+    public static Process stream(String cmd) throws Exception {
+        return exec(cmd);
+    }
+
     /** 执行命令并收集 stdout。失败不会抛异常，而是把错误写进返回值。 */
     public static String sh(String cmd) {
         StringBuilder sb = new StringBuilder();

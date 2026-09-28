@@ -43,8 +43,8 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- ── Action card ───────────────────────────────────────── -->
-            <com.google.android.material.card.MaterialCardView
+            <!-- ── Action card ── -->
+<com.google.android.material.card.MaterialCardView
                 style="@style/Widget.SpazPeek.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">
@@ -156,40 +156,286 @@
                         android:text="@string/status_unauthorized" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
+            <!-- ── HT 接管卡 ── -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.SpazPeek.Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/card_gap">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/TextAppearance.SpazPeek.TitleMedium"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/ht_title" />
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/swHt"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ht_switch" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/tvHtDevice"
+                        style="@style/TextAppearance.SpazPeek.BodyMedium"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:text="@string/ht_device_none" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnHtPick"
+                        style="@style/Widget.SpazPeek.Button.Tonal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:text="@string/ht_pick" />
+                    <TextView
+                        android:id="@+id/tvHtStatus"
+                        style="@style/TextAppearance.SpazPeek.LabelSmall"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:text="@string/ht_status_idle" />
+                    <TextView
+                        android:id="@+id/tvHtTelemetry"
+                        style="@style/TextAppearance.SpazPeek.LabelSmall"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnHtCalib"
+                        style="@style/Widget.SpazPeek.Button.Outlined"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ht_calib"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <!-- ── 姿态可视化（前移到保活之前） ── -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.SpazPeek.Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/card_gap">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/TextAppearance.SpazPeek.TitleMedium"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/ht_viz_title" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnVizReset"
+                            style="@style/Widget.SpazPeek.Button.Outlined"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ht_viz_reset" />
+                    </LinearLayout>
+                    <com.spazpeek.HeadSphereView
+                        android:id="@+id/vizHt"
+                        android:layout_width="match_parent"
+                        android:layout_height="300dp"
+                        android:layout_marginTop="@dimen/space_8" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            android:id="@+id/tvFps"
+                            style="@style/TextAppearance.SpazPeek.TitleMedium"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:backgroundTint="?attr/colorSecondaryContainer"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:text="-- Hz"
+                            android:textStyle="bold" />
+                        <TextView
+                            android:id="@+id/tvFpsState"
+                            style="@style/TextAppearance.SpazPeek.LabelSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="等待接管" />
+                        <TextView
+                            android:id="@+id/tvHtPose"
+                            style="@style/TextAppearance.SpazPeek.LabelSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:visibility="gone"
+                            android:text="@string/ht_pose_idle" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/tvSendRaw"
+                        style="@style/TextAppearance.SpazPeek.BodyMedium"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:fontFamily="monospace"
+                        android:text="rx +0  rz +0" />
+                    <TextView
+                        android:id="@+id/tvSendDeg"
+                        style="@style/TextAppearance.SpazPeek.BodyMedium"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="上下 +0.0°  左右 +0.0°" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:orientation="horizontal">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDirCalib"
+                            style="@style/Widget.SpazPeek.Button.Tonal"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/ht_dircalib" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDirFlip"
+                            style="@style/Widget.SpazPeek.Button.Outlined"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/ht_dirflip" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDirFlipP"
+                            style="@style/Widget.SpazPeek.Button.Outlined"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/ht_dirflipp" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/TextAppearance.SpazPeek.LabelSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="发送幅度" />
+                        <SeekBar
+                            android:id="@+id/sbSendGain"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:max="100"
+                            android:progress="60" />
+                        <TextView
+                            android:id="@+id/tvSendGain"
+                            style="@style/TextAppearance.SpazPeek.LabelSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="60%" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <!-- ── 后台保活 ── -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.SpazPeek.Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/card_gap">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+                    <TextView
+                        style="@style/TextAppearance.SpazPeek.TitleMedium"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="后台保活" />
+                    <TextView
+                        android:id="@+id/tvKeepAlive"
+                        style="@style/TextAppearance.SpazPeek.BodyMedium"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:text="保活状态检测中…" />
+                    <TextView
+                        android:id="@+id/tvGuard"
+                        style="@style/TextAppearance.SpazPeek.LabelSmall"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:orientation="horizontal">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnBattOpt"
+                            style="@style/Widget.SpazPeek.Button.Tonal"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="电池优化" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnBgSettings"
+                            style="@style/Widget.SpazPeek.Button.Outlined"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="后台设置" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-            <!-- ── Empty state guide ────────────────────────────────── -->
+            <!-- ── Empty state guide ── -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardEmpty"
                 style="@style/Widget.SpazPeek.Card.Outlined"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/card_gap">
-
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:padding="@dimen/card_padding">
-
                     <TextView
                         style="@style/TextAppearance.SpazPeek.TitleMedium"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/empty_title" />
-
                     <TextView
                         style="@style/TextAppearance.SpazPeek.BodyMedium"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_8"
                         android:text="@string/empty_step1" />
-
                     <TextView
                         style="@style/TextAppearance.SpazPeek.BodyMedium"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/empty_step2" />
-
                     <TextView
                         style="@style/TextAppearance.SpazPeek.BodyMedium"
                         android:layout_width="wrap_content"
@@ -197,13 +443,110 @@
                         android:text="@string/empty_step3" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-
-            <!-- ── Report: section cards (filled by Kotlin) ──────────── -->
             <LinearLayout
                 android:id="@+id/reportContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
+            <!-- ── 数据采集（含XM5同步） ── -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.SpazPeek.Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/card_gap">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+                    <TextView
+                        style="@style/TextAppearance.SpazPeek.TitleMedium"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="数据采集" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnGuide"
+                        style="@style/Widget.SpazPeek.Button.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:text="采集向导" />
+                    <TextView
+                        android:id="@+id/tvPhoneAng"
+                        style="@style/TextAppearance.SpazPeek.LabelSmall"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone"
+                        android:text="" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/swXm5"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="同步 XM5 读取数据" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/tvXm5"
+                        style="@style/TextAppearance.SpazPeek.LabelSmall"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="XM5: 未启用" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+    <FrameLayout
+        android:id="@+id/guideOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="24dp">
+            <com.spazpeek.CountdownRingView
+                android:id="@+id/ringGuide"
+                android:layout_width="200dp"
+                android:layout_height="200dp" />
+            <TextView
+                android:id="@+id/tvGuideTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:text="向导" />
+            <TextView
+                android:id="@+id/tvGuideSub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#CCCCCC"
+                android:text="" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnGuideMain"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="开始" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnGuideCancel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="取消" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

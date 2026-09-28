@@ -10,13 +10,23 @@ android {
         applicationId = "com.spazpeek"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3-m3"
+        versionCode = 5
+        versionName = "1.1"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../spazpeek-release.keystore")
+            storePassword = "spazpeek2026"
+            keyAlias = "spazpeek"
+            keyPassword = "spazpeek2026"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
