@@ -200,6 +200,7 @@ public class AacpHeadTracker {
             sleep(400);
             send(out, withPeriod(P_START_ALT));
             state("已发送 Start Head Tracking（alternate，" + (periodUs / 1000) + "ms），等待数据…");
+            final long startSentAt = System.currentTimeMillis();
 
             /* ═══ 速率自愈 v2（每轮切换配置——耳机只在配置变化时重新初始化头追流；
              * 已激活后自动切到目标配置 periodUs）═══ */
@@ -318,18 +319,24 @@ public class AacpHeadTracker {
             swd.start();
 
             /* ═══ 首数据超时（2026-09-28：重连后第一次接管必失败根因）═══
-             * 现象：蓝牙重连后 L2CAP connect() 正常（~70ms），Start 也发出去了，
-             * 但耳机端 AACP 服务还没就绪，6 秒只回 1 个包、framesHt=0，read 永远阻塞，
+             * 现象：蓝牙重连后 L2CAP connect() 正常（~60ms），Start 也发出去了，
+             * 但耳机端 AACP 服务还没就绪，只回零星包、framesHt=0，read 永远阻塞，
              * runSession 不返回 → Controller 的 3 次重试永远触发不了，只能手动重开。
-             * 修法：Start 后 12s 若仍无头追帧，主动关 socket 让会话返回 false，
-             * Controller 自动进 attempt 2/3（此时耳机端已就绪，实测第二次必成）。 */
+             * 修法：Start 后 8s 若仍无头追帧，主动关 socket 让会话返回 false，
+             * Controller 自动进 attempt 2/3（此时耳机端已就绪，实测第二次必成）。
+             * 用轮询而不用一次性 sleep，保证超时点精确卡在 Start 后 8s
+             * （之前版本从建链后算 12s，实际 15s 才触发，比人手还慢）。 */
             Thread firstDataWd = new Thread(new Runnable() {
                 @Override public void run() {
-                    sleep(12000);
-                    if (running && framesHt == 0) {
-                        HTLog.log(TAG, "首数据超时：12s 无头追帧（framesTotal=" + framesTotal + "），主动断开触发自动重试");
-                        state("首轮未收到头追数据，自动重试…");
-                        try { BluetoothSocket s = socket; if (s != null) s.close(); } catch (Throwable ignored) {}
+                    while (running) {
+                        sleep(500);
+                        if (!running || framesHt > 0) return;
+                        if (System.currentTimeMillis() - startSentAt > 8000) {
+                            HTLog.log(TAG, "首数据超时：Start 后 8s 无头追帧（framesTotal=" + framesTotal + "），主动断开触发自动重试");
+                            state("首轮耳机没睡醒，自动重试…");
+                            try { BluetoothSocket s = socket; if (s != null) s.close(); } catch (Throwable ignored) {}
+                            return;
+                        }
                     }
                 }
             }, "aacp-firstdata-wd");
