@@ -1,6 +1,6 @@
-# SpazPeek
+# O-Pose
 
-**OPPO ColorOS 16 头部跟踪接管工具，附带空间音频链路取证。**
+**OPPO / ColorOS + AirPods + Head Tracking：OPPO ColorOS 16 头部跟踪接管工具，附带空间音频链路取证。**
 
 让 AirPods Pro 2 的头动驱动系统空间音频，声场固定正前方。
 
@@ -18,7 +18,7 @@
 - 3D 球可视化真实头朝向，球下两行字显示发送 rx rz 与角度
 - 前台服务 + 反冻守护 + 静音保持，后台不掉线
 
-链路：AirPods AACP -> SpazPeek 解码 -> PoseBridge -> vtracker3 -> 系统空间音频。
+链路：AirPods AACP -> O-Pose 解码 -> PoseBridge -> vtracker3 -> 系统空间音频。
 
 实测机：一加 13T PKX110 ColorOS 16，APatch root + Zygisk + LSPosed + Shizuku。
 
@@ -37,7 +37,7 @@
 
 ## 使用
 
-1. 装 Shizuku 并启动，SpazPeek 里授权
+1. 装 Shizuku 并启动，O-Pose 里授权
 2. 选已配对的 AirPods Pro 2，打开接管开关
 3. 等帧率 40Hz 以上绿字，左右转点头听声场是否固定正前方
 4. 方向不对就点方向标定，或单独点左右反向 / 上下反向
