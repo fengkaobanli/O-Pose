@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SpazPeek</string>
-    <string name="app_subtitle">OPPO 头追接管版</string>
+    <string name="app_name">O-Pose</string>
+    <string name="app_subtitle">OPPO / ColorOS + AirPods + Head Tracking</string>
 
     <string name="btn_grant">请求 Shizuku</string>
     <string name="btn_refresh">刷新</string>
