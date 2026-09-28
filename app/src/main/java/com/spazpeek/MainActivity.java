@@ -436,16 +436,56 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         final java.util.List<BluetoothDevice> list = new java.util.ArrayList<>(bonded);
-        final String[] items = new String[list.size()];
-        for (int i = 0; i < list.size(); i++) {
-            BluetoothDevice d = list.get(i);
-            String name;
-            try { name = d.getName(); } catch (Throwable t) { name = null; }
-            items[i] = (name == null || name.isEmpty() ? "(未知设备)" : name) + "\n" + d.getAddress();
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.ht_pick)
-                .setItems(items, (dlg, which) -> {
+        // 排序：当前选中置顶 → 疑似 AirPods 置顶 → 按名字字母序
+        java.util.Collections.sort(list, (a, b) -> {
+            String aa, bb;
+            try { aa = a.getAddress(); } catch (Throwable t) { aa = ""; }
+            try { bb = b.getAddress(); } catch (Throwable t) { bb = ""; }
+            boolean aSel = aa != null && aa.equalsIgnoreCase(htMac);
+            boolean bSel = bb != null && bb.equalsIgnoreCase(htMac);
+            if (aSel != bSel) return aSel ? -1 : 1;
+            String an, bn;
+            try { an = a.getName(); } catch (Throwable t) { an = null; }
+            try { bn = b.getName(); } catch (Throwable t) { bn = null; }
+            if (an == null) an = "";
+            if (bn == null) bn = "";
+            boolean aPods = an.toLowerCase(Locale.US).contains("pods") || an.toLowerCase(Locale.US).contains("air");
+            boolean bPods = bn.toLowerCase(Locale.US).contains("pods") || bn.toLowerCase(Locale.US).contains("air");
+            if (aPods != bPods) return aPods ? -1 : 1;
+            return an.compareToIgnoreCase(bn);
+        });
+        android.widget.BaseAdapter devAdapter = new android.widget.BaseAdapter() {
+            private final android.view.LayoutInflater inf = android.view.LayoutInflater.from(MainActivity.this);
+            @Override public int getCount() { return list.size(); }
+            @Override public Object getItem(int p) { return list.get(p); }
+            @Override public long getItemId(int p) { return p; }
+            @Override public android.view.View getView(int p, android.view.View v, android.view.ViewGroup parent) {
+                if (v == null) v = inf.inflate(R.layout.item_ht_device, parent, false);
+                BluetoothDevice d = list.get(p);
+                String name, mac;
+                try { name = d.getName(); } catch (Throwable t) { name = null; }
+                try { mac = d.getAddress(); } catch (Throwable t) { mac = "??:??:??:??:??:??"; }
+                if (name == null || name.isEmpty()) name = "(未知设备)";
+                String typeLabel = "";
+                try {
+                    switch (d.getType()) {
+                        case BluetoothDevice.DEVICE_TYPE_CLASSIC: typeLabel = " · 经典蓝牙"; break;
+                        case BluetoothDevice.DEVICE_TYPE_LE: typeLabel = " · 低功耗"; break;
+                        case BluetoothDevice.DEVICE_TYPE_DUAL: typeLabel = " · 双模"; break;
+                        default: break;
+                    }
+                } catch (Throwable ignored) {}
+                boolean selected = mac != null && mac.equalsIgnoreCase(htMac);
+                if (selected) typeLabel += " · 当前使用";
+                ((TextView) v.findViewById(R.id.tvDevName)).setText(name);
+                ((TextView) v.findViewById(R.id.tvDevSub)).setText(mac + typeLabel);
+                v.findViewById(R.id.ivDevCheck).setVisibility(selected ? View.VISIBLE : View.GONE);
+                return v;
+            }
+        };
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.ht_pick) + "（" + list.size() + " 台已配对）")
+                .setAdapter(devAdapter, (dlg, which) -> {
                     htMac = list.get(which).getAddress();
                     getSharedPreferences(PREF, MODE_PRIVATE).edit().putString("ht_mac", htMac).apply();
                     updateHtDeviceLabel();
