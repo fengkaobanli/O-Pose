@@ -31,20 +31,21 @@ public final class HeadTrackController {
     private static final String TRACKER_PATH = "/data/local/tmp/vtracker3";
 
     /**
-     * 发送符号映射（实测标定 2026-09-25）：
-     *   pitch = -1：系统侧上下正确；
-     *   yaw   = -1：实测声场需反向——不翻会"跟头"（左转时声源也向左移动），
-     *               翻转后声源固定于空间、相对头反向转动。
+     * 发送符号映射（实测结论 2026-09-28，清空数据对照实验）：
+     *   方向标定正确（raw 极性正确：左转 yaw 为正、抬头 pitch 为正）时，
+     *   发送必须与头动同向（+1），声场才钉住正前方；
+     *   若发送反向（-1），声场反而跟着头走。
+     *   即：vtracker3/系统侧要的是真实头姿（同向），旋转补偿由系统自己做。
+     *   v27 之前解码输出与真值负相关，才需要 -1 扳回来；v27 解码已正相关，
+     *   符号固定 +1。标定只负责把"颠倒的配对坐标系"扳回标准极性。
      * 注：可视化显示层不经过此映射（onPose 给 UI 的为"跟头语义"角）。
-     * v27：四元数解码输出与真值正相关（解密报告 vs XM5 r=+0.998），符号直接取 +1；
-     *      若听感方向反了，改回 -1 并重新实测。
      */
     private static final String PREF = "spz";
     private static final String K_PITCH_SIGN = "dir_pitch_sign";
     private static final String K_YAW_SIGN = "dir_yaw_sign";
-    /** 发送符号映射：可在 App 内「方向标定」自动测定 / 一键反向，持久化到 SharedPreferences。 */
-    private volatile float pitchSign = -1f;
-    private volatile float yawSign = -1f;
+    /** 发送符号映射：默认与头动同向（+1），声场固定正前方（2026-09-28 实测结论）。 */
+    private volatile float pitchSign = 1f;
+    private volatile float yawSign = 1f;
     /**
      * pitch 发送增益：2026-09-28 起 pitch 源为世界系欧拉 eP（幅度真实，无需补偿）。
      * 此前视线法 el 压缩点头（±10°），才需要 2.0 增益；eP 点头 [-59,+34] 已是真实角度，增益归 1。
@@ -111,8 +112,8 @@ public final class HeadTrackController {
         this.ctx = ctx.getApplicationContext();
         this.ui = ui;
         android.content.SharedPreferences sp = this.ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE);
-        pitchSign = sp.getFloat(K_PITCH_SIGN, -1f); sendGain = sp.getFloat(K_SEND_GAIN, 0.6f);
-        yawSign = sp.getFloat(K_YAW_SIGN, -1f);
+        pitchSign = sp.getFloat(K_PITCH_SIGN, 1f); sendGain = sp.getFloat(K_SEND_GAIN, 0.6f);
+        yawSign = sp.getFloat(K_YAW_SIGN, 1f);
     }
 
     public boolean isActive() {
@@ -216,11 +217,12 @@ public final class HeadTrackController {
                     boolean okY = Math.abs(dyaw) >= 8.0;
                     boolean okP = Math.abs(dpitch) >= 3.0;
 
-                    // 声场固定语义：声源不动，发送角必须与头动反向。
-                    // 左转 raw yaw 为正（多配对稳定）→ 正确发送为负；抬头 raw eP 为正 → 正确发送为负。
-                    // 所以符号 = 原始动作极性的反号（此前误写成同号，标定会收敛到错误符号，已修正）。
-                    if (okY) { yawSign = dyaw > 0 ? -1f : 1f; }
-                    if (okP) { pitchSign = dpitch > 0 ? -1f : 1f; }
+                    // 声场固定语义（2026-09-28 实测结论）：系统侧要的是真实头姿，
+                    // 发送必须与头动同向。左转 raw yaw 为正 → 发送符号 +1；
+                    // 抬头 raw eP 为正 → 发送符号 +1。
+                    // 标定只把"颠倒的配对坐标系"扳回标准极性。
+                    if (okY) { yawSign = dyaw > 0 ? 1f : -1f; }
+                    if (okP) { pitchSign = dpitch > 0 ? 1f : -1f; }
                     if (okY || okP) saveSigns();
 
                     HTLog.log("HTC", String.format(Locale.US,
@@ -233,8 +235,8 @@ public final class HeadTrackController {
                                 dyaw, dpitch));
                         return;
                     }
-                    String sy = okY ? ("左右" + (yawSign < 0 ? "正常" : "已反向")) : "左右未识别(保留)";
-                    String sp2 = okP ? ("上下" + (pitchSign < 0 ? "正常" : "已反向")) : "上下未识别(保留)";
+                    String sy = okY ? ("左右" + (yawSign > 0 ? "正常" : "已反向")) : "左右未识别(保留)";
+                    String sp2 = okP ? ("上下" + (pitchSign > 0 ? "正常" : "已反向")) : "上下未识别(保留)";
                     status("方向标定完成：" + sy + " · " + sp2);
                 } catch (Throwable e) {
                     status("方向标定异常：" + e);
