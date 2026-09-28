@@ -317,6 +317,25 @@ public class AacpHeadTracker {
             swd.setDaemon(true);
             swd.start();
 
+            /* ═══ 首数据超时（2026-09-28：重连后第一次接管必失败根因）═══
+             * 现象：蓝牙重连后 L2CAP connect() 正常（~70ms），Start 也发出去了，
+             * 但耳机端 AACP 服务还没就绪，6 秒只回 1 个包、framesHt=0，read 永远阻塞，
+             * runSession 不返回 → Controller 的 3 次重试永远触发不了，只能手动重开。
+             * 修法：Start 后 12s 若仍无头追帧，主动关 socket 让会话返回 false，
+             * Controller 自动进 attempt 2/3（此时耳机端已就绪，实测第二次必成）。 */
+            Thread firstDataWd = new Thread(new Runnable() {
+                @Override public void run() {
+                    sleep(12000);
+                    if (running && framesHt == 0) {
+                        HTLog.log(TAG, "首数据超时：12s 无头追帧（framesTotal=" + framesTotal + "），主动断开触发自动重试");
+                        state("首轮未收到头追数据，自动重试…");
+                        try { BluetoothSocket s = socket; if (s != null) s.close(); } catch (Throwable ignored) {}
+                    }
+                }
+            }, "aacp-firstdata-wd");
+            firstDataWd.setDaemon(true);
+            firstDataWd.start();
+
             InputStream in = socket.getInputStream();
             byte[] buf = new byte[4096];
             while (running) {
